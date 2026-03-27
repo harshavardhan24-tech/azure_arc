@@ -19,15 +19,11 @@ Start-Transcript -Path "$($LocalBoxConfig.Paths.LogsDir)\LocalBoxLogonScript.log
 # Login to Azure CLI with service principal provided by user
 Write-Header "Az CLI Login"
 
-
 refreshenv
-az login -u $Env:azureusername -p $Env:azurepassword
-
-$spnProviderId = az ad sp list --display-name "Microsoft.AzureStackHCI Resource Provider" --query "[0].id" -o tsv
-
-[System.Environment]::SetEnvironmentVariable('spnProviderId', $spnProviderId, [System.EnvironmentVariableTarget]::Machine)
-
+#az login -u $Env:azureusername -p $Env:azurepassword
 az login --identity --tenant $Env:tenantId
+$spnProviderId = az ad sp list --display-name "Microsoft.AzureStackHCI Resource Provider" --query "[0].id" -o tsv
+[System.Environment]::SetEnvironmentVariable('spnProviderId', $spnProviderId, [System.EnvironmentVariableTarget]::Machine)
 
 # Login to Azure PowerShell
 Connect-AzAccount -Identity -Tenant $Env:tenantId -Subscription $Env:subscriptionId
