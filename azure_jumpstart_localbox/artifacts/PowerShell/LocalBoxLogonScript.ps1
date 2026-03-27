@@ -56,6 +56,8 @@ az provider register --namespace Microsoft.Storage --wait
 az provider register --namespace Microsoft.Insights --wait
 az provider register --namespace Microsoft.KeyVault --wait
 
+Sleep 20
+
 #####################################################################
 # Add RBAC permissions
 #####################################################################
