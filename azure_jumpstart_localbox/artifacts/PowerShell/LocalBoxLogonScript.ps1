@@ -49,6 +49,12 @@ az provider register --namespace Microsoft.OperationsManagement --wait
 az provider register --namespace Microsoft.AzureStackHCI --wait
 az provider register --namespace Microsoft.ResourceConnector --wait
 az provider register --namespace Microsoft.Compute --wait
+az provider register --namespace Microsoft.HybridCloud --wait
+az provider register --namespace Microsoft.HybridConnectivity --wait
+az provider register --namespace Microsoft.Attestation --wait
+az provider register --namespace Microsoft.Storage --wait
+az provider register --namespace Microsoft.Insights --wait
+az provider register --namespace Microsoft.KeyVault --wait
 
 #####################################################################
 # Add RBAC permissions
@@ -160,5 +166,63 @@ $null = New-Item -Path $LogsBundleTempDirectory -ItemType Directory -Force
 Copy-Item -Path "$($LocalBoxConfig.Paths.LogsDir)\*.log" -Destination $LogsBundleTempDirectory -Force -PassThru
 Compress-Archive -Path "$LogsBundleTempDirectory\*.log" -DestinationPath "$($LocalBoxConfig.Paths.LogsDir)\LogsBundle-$RandomString.zip" -PassThru
 
+if (-not $Env:LocalBoxDir) {
+    $Env:LocalBoxDir = "C:\LocalBox"
+}
 
+$TemplateFile = Join-Path -Path $Env:LocalBoxDir -ChildPath "azlocal.json"
+$TemplateParameterFile = Join-Path -Path $Env:LocalBoxDir -ChildPath "azlocal.parameters.json"
+
+if (!(Test-Path $TemplateFile)) {
+    Write-Host "ERROR: Template file not found: $TemplateFile" -ForegroundColor Red
+    exit
+}
+
+if (!(Test-Path $TemplateParameterFile)) {
+    Write-Host "ERROR: Parameter file not found: $TemplateParameterFile" -ForegroundColor Red
+    exit
+}
+
+Write-Host "Fetching HCI Resource Provider Object ID..." -ForegroundColor Cyan
+
+$hciObjectId = (Get-AzADServicePrincipal -DisplayName "Microsoft.AzureStackHCI Resource Provider").Id
+
+if (-not $hciObjectId) {
+    Write-Host "ERROR: Could not find Service Principal: Microsoft.AzureStackHCI Resource Provider" -ForegroundColor Red
+    exit
+}
+
+Write-Host "HCI Resource Provider Object ID found: $hciObjectId" -ForegroundColor Green
+
+Write-Host "Updating parameter file..." -ForegroundColor Cyan
+$json = Get-Content $TemplateParameterFile -Raw | ConvertFrom-Json
+
+$json.parameters.hciResourceProviderObjectID.value = $hciObjectId
+
+$json | ConvertTo-Json -Depth 20 | Set-Content $TemplateParameterFile
+
+Write-Host "Parameter file updated successfully." -ForegroundColor Green
+
+Write-Host "Running validation deployment..." -ForegroundColor Yellow
+New-AzResourceGroupDeployment `
+    -Name 'localcluster-validate' `
+    -ResourceGroupName $Env:resourceGroup `
+    -TemplateFile $TemplateFile `
+    -TemplateParameterFile $TemplateParameterFile `
+    -OutVariable ClusterValidationDeployment `
+    -ErrorAction Stop
+
+Write-Host "Validation deployment completed successfully." -ForegroundColor Green
+
+Write-Host "Running deployment..." -ForegroundColor Yellow
+New-AzResourceGroupDeployment `
+    -Name 'localcluster-deploy' `
+    -ResourceGroupName $Env:resourceGroup `
+    -TemplateFile $TemplateFile `
+    -TemplateParameterFile $TemplateParameterFile `
+    -Mode Incremental `
+    -OutVariable ClusterDeployment `
+    -ErrorAction Stop
+
+Write-Host "Deployment completed successfully." -ForegroundColor Green
 Stop-Transcript
