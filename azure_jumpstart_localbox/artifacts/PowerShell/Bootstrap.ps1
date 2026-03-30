@@ -1,3 +1,4 @@
+
 param (
 
 
@@ -27,7 +28,7 @@ $PSBoundParameters
   [string]$vmAutologon = true
 
 
-$templateBaseUrl = "https://raw.githubusercontent.com/CloudLabsAI-Azure/azure_arc/refs/heads/main/azure_jumpstart_localbox/"
+$templateBaseUrl = "https://raw.githubusercontent.com/harshavardhan24-tech/azure_arc/refs/heads/main/azure_jumpstart_localbox/"
 Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
 choco install azure-cli -y
 
