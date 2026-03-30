@@ -20,10 +20,12 @@ Start-Transcript -Path "$($LocalBoxConfig.Paths.LogsDir)\LocalBoxLogonScript.log
 Write-Header "Az CLI Login"
 
 refreshenv
-#az login -u $Env:azureusername -p $Env:azurepassword
-az login --identity --tenant $Env:tenantId
+az login -u $Env:azureusername -p $Env:azurepassword
+
 $spnProviderId = az ad sp list --display-name "Microsoft.AzureStackHCI Resource Provider" --query "[0].id" -o tsv
 [System.Environment]::SetEnvironmentVariable('spnProviderId', $spnProviderId, [System.EnvironmentVariableTarget]::Machine)
+
+az login --identity --tenant $Env:tenantId
 
 # Login to Azure PowerShell
 Connect-AzAccount -Identity -Tenant $Env:tenantId -Subscription $Env:subscriptionId
@@ -164,42 +166,31 @@ $null = New-Item -Path $LogsBundleTempDirectory -ItemType Directory -Force
 Copy-Item -Path "$($LocalBoxConfig.Paths.LogsDir)\*.log" -Destination $LogsBundleTempDirectory -Force -PassThru
 Compress-Archive -Path "$LogsBundleTempDirectory\*.log" -DestinationPath "$($LocalBoxConfig.Paths.LogsDir)\LogsBundle-$RandomString.zip" -PassThru
 
+az login -u $Env:azureusername -p $Env:azurepassword
+
+# Set path
 if (-not $Env:LocalBoxDir) {
     $Env:LocalBoxDir = "C:\LocalBox"
 }
 
-$TemplateFile = Join-Path -Path $Env:LocalBoxDir -ChildPath "azlocal.json"
-$TemplateParameterFile = Join-Path -Path $Env:LocalBoxDir -ChildPath "azlocal.parameters.json"
+$TemplateParameterFile = Join-Path $Env:LocalBoxDir "azlocal.parameters.json"
 
-if (!(Test-Path $TemplateFile)) {
-    Write-Host "ERROR: Template file not found: $TemplateFile" -ForegroundColor Red
-    exit
-}
-
+# Check file
 if (!(Test-Path $TemplateParameterFile)) {
-    Write-Host "ERROR: Parameter file not found: $TemplateParameterFile" -ForegroundColor Red
+    Write-Host "ERROR: Parameter file not found" -ForegroundColor Red
     exit
 }
 
+# Get Object ID
 Write-Host "Fetching HCI Resource Provider Object ID..." -ForegroundColor Cyan
-
-$hciObjectId = (Get-AzADServicePrincipal -DisplayName "Microsoft.AzureStackHCI Resource Provider").Id
+$hciObjectId = az ad sp list --display-name "Microsoft.AzureStackHCI Resource Provider" --query "[0].id" -o tsv
 
 if (-not $hciObjectId) {
-    Write-Host "ERROR: Could not find Service Principal: Microsoft.AzureStackHCI Resource Provider" -ForegroundColor Red
+    Write-Host "ERROR: Failed to fetch Object ID" -ForegroundColor Red
     exit
 }
 
-Write-Host "HCI Resource Provider Object ID found: $hciObjectId" -ForegroundColor Green
-
-Write-Host "Updating parameter file..." -ForegroundColor Cyan
-$json = Get-Content $TemplateParameterFile -Raw | ConvertFrom-Json
-
-$json.parameters.hciResourceProviderObjectID.value = $hciObjectId
-
-$json | ConvertTo-Json -Depth 20 | Set-Content $TemplateParameterFile
-
-Write-Host "Parameter file updated successfully." -ForegroundColor Green
+Write-Host "Object ID: $hciObjectId" -ForegroundColor Green
 
 Write-Host "Running validation deployment..." -ForegroundColor Yellow
 New-AzResourceGroupDeployment `
