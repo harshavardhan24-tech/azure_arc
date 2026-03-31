@@ -488,30 +488,55 @@ function Set-AzLocalNodeVHDX {
     Install-WindowsFeature -Vhd $path -Name Failover-Clustering -IncludeAllSubFeature -IncludeManagementTools | Out-Null
     Start-Sleep -Seconds 15
 
-    Write-Host "Mounting VHDX file at $path"
-    $partition = Mount-VHD -Path $path -Passthru | Get-Disk | Get-Partition -PartitionNumber 3
-    if (!$partition.DriveLetter) {
-        $MountedDrive = "Y"
-        $partition | Set-Partition -NewDriveLetter $MountedDrive
+# 🔴 Ensure VHD is not locked
+$vmUsingDisk = Get-VM | Where-Object {
+    ($_ | Get-VMHardDiskDrive).Path -contains $path
+}
+
+if ($vmUsingDisk) {
+    Write-Host "Detaching VHD from VM: $($vmUsingDisk.Name)"
+    Stop-VM -Name $vmUsingDisk.Name -Force -ErrorAction SilentlyContinue
+    Start-Sleep 5
+    Get-VMHardDiskDrive -VMName $vmUsingDisk.Name |
+        Where-Object { $_.Path -eq $path } |
+        Remove-VMHardDiskDrive
+}
+
+# 🔁 Retry Mount
+$mounted = $false
+$retry = 0
+
+do {
+    try {
+        Write-Host "Mount attempt $($retry+1)..."
+
+        $partition = Mount-VHD -Path $path -Passthru -ErrorAction Stop |
+            Get-Disk | Get-Partition | Where-Object { $_.Type -ne 'Reserved' } | Select-Object -First 1
+
+        if (!$partition) { throw "Partition not found" }
+
+        if (!$partition.DriveLetter) {
+            $MountedDrive = "Y"
+            $partition | Set-Partition -NewDriveLetter $MountedDrive
+        } else {
+            $MountedDrive = $partition.DriveLetter
+        }
+
+        $mounted = $true
     }
-    else {
-        $MountedDrive = $partition.DriveLetter
+    catch {
+        Write-Warning "Mount failed: $_"
+        Start-Sleep 5
+        $retry++
     }
 
-    Write-Host "Injecting answer file to $path"
-    $UnattendXML = GenerateAnswerFile -HostName $Hostname -IPAddress $IPAddress -VMMac $VMMac -LocalBoxConfig $LocalBoxConfig
-    Write-Host "Mounted Disk Volume is: $MountedDrive"
-    $PantherDir = Get-ChildItem -Path ($MountedDrive + ":\Windows")  -Filter "Panther"
-    if (!$PantherDir) { New-Item -Path ($MountedDrive + ":\Windows\Panther") -ItemType Directory -Force | Out-Null }
-    Set-Content -Value $UnattendXML -Path ($MountedDrive + ":\Windows\Panther\Unattend.xml") -Force
+} while (-not $mounted -and $retry -lt 5)
 
-    New-Item -Path ($MountedDrive + ":\VHD") -ItemType Directory -Force | Out-Null
-    Copy-Item -Path "$($LocalBoxConfig.Paths.VHDDir)" -Destination ($MountedDrive + ":\VHD") -Recurse -Force
-    # Copy-Item -Path "$($LocalBoxConfig.Paths.VHDDir)\Ubuntu.vhdx" -Destination ($MountedDrive + ":\VHD") -Recurse -Force
+if (-not $mounted) {
+    throw "Failed to mount VHD after retries"
+}
 
-    # Dismount VHDX
-    Write-Host "Dismounting VHDX File at path $path"
-    Dismount-VHD $path
+Write-Host "Mounted Disk Volume is: $MountedDrive"
 }
 
 function Set-DataDrives {
@@ -589,6 +614,7 @@ function Test-AllVMsAvailable
     Test-VMAvailable -VMName $LocalBoxConfig.MgmtHostConfig.Hostname -Credential $Credential
     foreach ($VM in $LocalBoxConfig.NodeHostConfig) {
         Test-VMAvailable -VMName $VM.Hostname -Credential $Credential
+        Start-Sleep -Seconds 60
     }
 }
 
