@@ -173,6 +173,7 @@ if (-not $Env:LocalBoxDir) {
     $Env:LocalBoxDir = "C:\LocalBox"
 }
 
+$TemplateFile = Join-Path -Path $Env:LocalBoxDir -ChildPath "azlocal.json"
 $TemplateParameterFile = Join-Path $Env:LocalBoxDir "azlocal.parameters.json"
 
 # Check file
@@ -191,6 +192,15 @@ if (-not $hciObjectId) {
 }
 
 Write-Host "Object ID: $hciObjectId" -ForegroundColor Green
+
+Write-Host "Updating parameter file..." -ForegroundColor Cyan
+$json = Get-Content $TemplateParameterFile -Raw | ConvertFrom-Json
+
+$json.parameters.hciResourceProviderObjectID.value = $hciObjectId
+
+$json | ConvertTo-Json -Depth 20 | Set-Content $TemplateParameterFile
+
+Write-Host "Parameter file updated successfully." -ForegroundColor Green
 
 Write-Host "Running validation deployment..." -ForegroundColor Yellow
 New-AzResourceGroupDeployment `
